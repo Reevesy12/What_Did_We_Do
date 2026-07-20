@@ -235,6 +235,11 @@
   .cal-cell.blank{background:transparent;cursor:default;}
   .cal-cell.has-entries{border-color:var(--wine);font-weight:700;}
   .cal-cell .dot{width:5px;height:5px;border-radius:50%;background:var(--ochre);margin-top:3px;}
+  .cal-cell .count{
+    font-family:var(--font-body); font-size:8.5px; font-weight:700; color:var(--ochre);
+    margin-top:1px; line-height:1;
+  }
+  .cal-cell.selected .count{color:#fff;}
   .cal-cell.today{box-shadow:inset 0 0 0 2px var(--ochre);}
   .cal-cell.selected{background:var(--wine);color:#fff;}
   .cal-cell.selected .dot{background:#fff;}
@@ -584,6 +589,7 @@
   document.getElementById('entryForm').addEventListener('submit', e => {
     e.preventDefault();
     if (attendeeInput.value.trim()) addAttendeeFromInput();
+    const wasEditing = !!editingId;
     if (editingId){
       const idx = entries.findIndex(en => en.id === editingId);
       if (idx !== -1){
@@ -615,7 +621,7 @@
     dateInput.value = TODAY_ISO;
     refreshAllViews();
     const status = document.getElementById('saveStatus');
-    status.textContent = 'Saved.';
+    status.textContent = wasEditing ? 'Entry Updated' : 'Entry Submitted';
     setTimeout(() => status.textContent = '', 2000);
   });
 
@@ -705,11 +711,14 @@
     grid.innerHTML = cells.map(d => {
       if (d === null) return `<div class="cal-cell blank"></div>`;
       const iso = toISO(viewYear, viewMonth, d);
-      const has = !!map[iso];
+      const count = map[iso] ? map[iso].length : 0;
       const isToday = iso === TODAY_ISO;
       const isSelected = iso === selectedDate;
-      return `<div class="cal-cell${has?' has-entries':''}${isToday?' today':''}${isSelected?' selected':''}" data-date="${iso}">
-        ${d}${has ? '<span class="dot"></span>' : ''}
+      let indicator = '';
+      if (count === 1) indicator = '<span class="dot"></span>';
+      else if (count > 1) indicator = `<span class="count">${count}</span>`;
+      return `<div class="cal-cell${count?' has-entries':''}${isToday?' today':''}${isSelected?' selected':''}" data-date="${iso}">
+        ${d}${indicator}
       </div>`;
     }).join('');
 
@@ -730,7 +739,7 @@
     if (!dayEntries.length){
       html += `<div class="empty-note">Nothing logged for this day yet.</div>`;
     } else {
-      html += dayEntries.map(entryCardHTML).join('');
+      html += dayEntries.map(e => entryCardHTML(e)).join('');
     }
     html += `<button class="btn-secondary" id="addForDay" style="width:100%;margin-top:8px;">+ Add entry for this day</button>`;
     panel.innerHTML = html;
