@@ -167,6 +167,13 @@
     margin-bottom:12px;
   }
   .entry-card .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+  .card-actions{display:flex;gap:4px;flex-shrink:0;}
+  .icon-btn{
+    background:none;border:none;color:var(--ink-faint);cursor:pointer;
+    font-size:15px;padding:4px 6px;border-radius:6px;line-height:1;
+  }
+  .icon-btn:hover{background:var(--wine-tint);color:var(--wine);}
+  .icon-btn.delete-btn:hover{background:#FF6B6B26;color:var(--danger);}
   .entry-title{
     font-family:var(--font-display);
     font-weight:700;
@@ -285,7 +292,7 @@
 
     <!-- ADD ENTRY -->
     <section class="view active" id="view-add">
-      <h2 class="section-title">Log today</h2>
+      <h2 class="section-title" id="addSectionTitle">Log today</h2>
       <form id="entryForm">
         <div class="field">
           <label for="f-date">Date</label>
@@ -310,7 +317,8 @@
           <label for="f-desc">What did we do?</label>
           <textarea id="f-desc" placeholder="A few lines about it..."></textarea>
         </div>
-        <button type="submit" class="btn-primary">Save entry</button>
+        <button type="submit" class="btn-primary" id="submitBtn">Save entry</button>
+        <button type="button" class="btn-secondary" id="cancelEditBtn" style="width:100%;margin-top:8px;display:none;">Cancel edit</button>
         <div class="status-msg" id="saveStatus"></div>
       </form>
 
@@ -478,6 +486,77 @@
   dateInput.min = toISO(MIN_YEAR, MIN_MONTH, 1);
 
   let currentAttendees = [];
+  let editingId = null;
+  const submitBtn = document.getElementById('submitBtn');
+  const cancelEditBtn = document.getElementById('cancelEditBtn');
+  const addSectionTitle = document.getElementById('addSectionTitle');
+
+  function enterEditMode(entry){
+    editingId = entry.id;
+    dateInput.value = entry.date;
+    titleInput.value = entry.title;
+    venueInput.value = entry.venue || '';
+    descInput.value = entry.description || '';
+    currentAttendees = [...(entry.attendees || [])];
+    renderChips();
+    submitBtn.textContent = 'Update entry';
+    cancelEditBtn.style.display = 'block';
+    addSectionTitle.textContent = 'Edit entry';
+    goToTab('add');
+    dateInput.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+
+  function exitEditMode(){
+    editingId = null;
+    submitBtn.textContent = 'Save entry';
+    cancelEditBtn.style.display = 'none';
+    addSectionTitle.textContent = 'Log today';
+  }
+
+  cancelEditBtn.addEventListener('click', () => {
+    exitEditMode();
+    titleInput.value = ''; venueInput.value = ''; descInput.value = '';
+    currentAttendees = []; renderChips();
+    dateInput.value = TODAY_ISO;
+  });
+
+  function findEntry(id){ return entries.find(e => e.id === id); }
+
+  function deleteEntry(id){
+    const entry = findEntry(id);
+    if (!entry) return;
+    const label = entry.title ? `"${entry.title}"` : 'this entry';
+    const ok = window.confirm(`Delete ${label} (${formatShort(entry.date)})? This can't be undone.`);
+    if (!ok) return;
+    entries = entries.filter(e => e.id !== id);
+    saveEntries();
+    if (editingId === id) exitEditMode();
+    refreshAllViews();
+  }
+
+  function refreshAllViews(){
+    refreshDatalists();
+    renderUpcoming();
+    renderOnThisDay();
+    renderCalendar();
+    renderDayPanel();
+    renderFilterRow();
+    runSearch();
+  }
+
+  // Event delegation: edit/delete buttons render inside dynamically-built cards
+  function wireCardActions(containerId){
+    document.getElementById(containerId).addEventListener('click', e => {
+      const editBtn = e.target.closest('.edit-btn');
+      const delBtn = e.target.closest('.delete-btn');
+      if (editBtn){
+        const entry = findEntry(editBtn.dataset.id);
+        if (entry) enterEditMode(entry);
+      } else if (delBtn){
+        deleteEntry(delBtn.dataset.id);
+      }
+    });
+  }
   function renderChips(){
     attendeeChipsBox.innerHTML = currentAttendees.map((name,i) =>
       `<span class="chip">${escapeHtml(name)}<button type="button" data-i="${i}" aria-label="Remove ${escapeHtml(name)}">&times;</button></span>`
@@ -505,25 +584,36 @@
   document.getElementById('entryForm').addEventListener('submit', e => {
     e.preventDefault();
     if (attendeeInput.value.trim()) addAttendeeFromInput();
-    const entry = {
-      id: uid(),
-      date: dateInput.value,
-      title: titleInput.value.trim(),
-      venue: venueInput.value.trim(),
-      attendees: [...currentAttendees],
-      description: descInput.value.trim(),
-      created: Date.now()
-    };
-    entries.push(entry);
+    if (editingId){
+      const idx = entries.findIndex(en => en.id === editingId);
+      if (idx !== -1){
+        entries[idx] = {
+          ...entries[idx],
+          date: dateInput.value,
+          title: titleInput.value.trim(),
+          venue: venueInput.value.trim(),
+          attendees: [...currentAttendees],
+          description: descInput.value.trim()
+        };
+      }
+      exitEditMode();
+    } else {
+      const entry = {
+        id: uid(),
+        date: dateInput.value,
+        title: titleInput.value.trim(),
+        venue: venueInput.value.trim(),
+        attendees: [...currentAttendees],
+        description: descInput.value.trim(),
+        created: Date.now()
+      };
+      entries.push(entry);
+    }
     saveEntries();
     titleInput.value = ''; venueInput.value = ''; descInput.value = '';
     currentAttendees = []; renderChips();
     dateInput.value = TODAY_ISO;
-    refreshDatalists();
-    renderUpcoming();
-    renderOnThisDay();
-    renderCalendar();
-    renderFilterRow();
+    refreshAllViews();
     const status = document.getElementById('saveStatus');
     status.textContent = 'Saved.';
     setTimeout(() => status.textContent = '', 2000);
@@ -669,6 +759,10 @@
             ${e.venue ? `<span>📍 ${highlight(e.venue, q)}</span>` : ''}
           </div>
         </div>
+        <div class="card-actions">
+          <button type="button" class="icon-btn edit-btn" data-id="${e.id}" aria-label="Edit entry">✏️</button>
+          <button type="button" class="icon-btn delete-btn" data-id="${e.id}" aria-label="Delete entry">🗑️</button>
+        </div>
       </div>
       ${e.description ? `<p class="entry-desc">${highlight(e.description, q)}</p>` : ''}
       ${e.attendees && e.attendees.length ? `<div class="entry-attendees">${e.attendees.map(a => `<span class="tag-sage">${highlight(a,q)}</span>`).join('')}</div>` : ''}
@@ -781,13 +875,7 @@
           }
         });
         saveEntries();
-        refreshDatalists();
-        renderUpcoming();
-    renderOnThisDay();
-        renderCalendar();
-        renderDayPanel();
-        renderFilterRow();
-        runSearch();
+        refreshAllViews();
         statusEl.textContent = `Added ${added} new entr${added===1?'y':'ies'}${skipped ? `, skipped ${skipped} already logged` : ''}.`;
       } catch(err){
         statusEl.textContent = 'Could not read that file — make sure it\'s an export from this app.';
@@ -805,6 +893,8 @@
   renderCalendar();
   renderFilterRow();
   runSearch();
+  wireCardActions('dayPanel');
+  wireCardActions('searchResults');
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
