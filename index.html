@@ -327,11 +327,14 @@
     <form id="loginForm">
       <div class="field">
         <label for="login-email">Email</label>
-        <input type="text" id="login-email" autocomplete="username" required>
+        <input type="text" id="login-email" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required>
       </div>
       <div class="field" style="margin-bottom:8px;">
         <label for="login-password">Password</label>
-        <input type="password" id="login-password" autocomplete="current-password" required>
+        <div style="position:relative;">
+          <input type="password" id="login-password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" required style="padding-right:56px;">
+          <button type="button" id="togglePassword" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--ink-faint);font-size:12px;font-weight:700;cursor:pointer;padding:6px 8px;">SHOW</button>
+        </div>
       </div>
       <button type="submit" class="btn-primary" id="loginSubmitBtn">Log in</button>
       <div id="loginError"></div>
@@ -1088,7 +1091,16 @@
     window.fb.signInWithEmailAndPassword(window.fb.auth, email, password).catch(err => {
       loginSubmitBtn.disabled = false;
       loginSubmitBtn.textContent = 'Log in';
-      loginError.textContent = 'Could not log in — check the email and password.';
+      const code = (err && err.code) || 'unknown-error';
+      const friendly = {
+        'auth/invalid-credential': 'Wrong email or password.',
+        'auth/wrong-password': 'Wrong password.',
+        'auth/user-not-found': 'No account exists for that email.',
+        'auth/invalid-email': 'That email address looks incorrectly formatted.',
+        'auth/too-many-requests': 'Too many attempts — wait a minute and try again.',
+        'auth/network-request-failed': 'No internet connection.'
+      }[code] || `Could not log in (${code}).`;
+      loginError.textContent = friendly;
       console.error(err);
     });
   });
@@ -1099,6 +1111,14 @@
       window.fb.signOut(window.fb.auth).catch(() => {});
     });
   }
+
+  const togglePasswordBtn = document.getElementById('togglePassword');
+  const loginPasswordInput = document.getElementById('login-password');
+  togglePasswordBtn.addEventListener('click', () => {
+    const showing = loginPasswordInput.type === 'text';
+    loginPasswordInput.type = showing ? 'password' : 'text';
+    togglePasswordBtn.textContent = showing ? 'SHOW' : 'HIDE';
+  });
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
