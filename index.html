@@ -100,7 +100,7 @@
     margin-bottom:6px;
     font-weight:600;
   }
-  input[type=text], input[type=date], textarea{
+  input[type=text], input[type=date], input[type=password], textarea{
     width:100%;
     border:1px solid var(--line);
     background:var(--card);
@@ -252,6 +252,15 @@
   .search-bar{display:flex;gap:8px;margin-bottom:14px;}
   .search-bar input{flex:1;}
   .filter-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+  .filter-row.collapsed{display:none;}
+  .filter-toggle{
+    display:inline-flex;align-items:center;gap:5px;background:none;border:none;
+    color:var(--ink-faint);font-size:12px;font-weight:600;cursor:pointer;
+    margin-bottom:14px;padding:2px 0;
+  }
+  .filter-toggle:hover{color:var(--wine);}
+  .filter-toggle .chev{transition:transform .15s ease;}
+  .filter-toggle.open .chev{transform:rotate(180deg);}
   .filter-chip{
     border:1px solid var(--line);background:var(--card);color:var(--ink-soft);
     border-radius:100px;padding:5px 12px;font-size:12.5px;font-weight:600;cursor:pointer;
@@ -283,10 +292,53 @@
     content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);
     width:26px;height:2px;background:var(--wine);border-radius:2px;
   }
+
+  /* ---------- Login ---------- */
+  #loginScreen{
+    min-height:100vh;display:flex;align-items:center;justify-content:center;
+    padding:24px;
+  }
+  #loginScreen .login-box{max-width:340px;width:100%;}
+  #loginScreen h1{
+    font-family:var(--font-display);font-style:italic;font-weight:700;
+    font-size:26px;color:var(--wine);margin:0 0 6px;text-align:center;
+  }
+  #loginScreen p.sub{color:var(--ink-faint);font-size:13px;text-align:center;margin:0 0 26px;}
+  #loginError{
+    color:var(--danger);font-size:13px;margin-top:10px;text-align:center;min-height:16px;
+  }
+  .app{display:none;}
+  .app.visible{display:flex;}
+
+  /* ---------- Author badge ---------- */
+  .author-badge{
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:800;letter-spacing:0.3px;
+    padding:2px 7px;border-radius:100px;margin-left:6px;vertical-align:middle;
+  }
 </style>
 </head>
 <body>
-<div class="app">
+
+<div id="loginScreen">
+  <div class="login-box">
+    <h1>What did we do&hellip;</h1>
+    <p class="sub">Sign in to see your shared log.</p>
+    <form id="loginForm">
+      <div class="field">
+        <label for="login-email">Email</label>
+        <input type="text" id="login-email" autocomplete="username" required>
+      </div>
+      <div class="field" style="margin-bottom:8px;">
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn-primary" id="loginSubmitBtn">Log in</button>
+      <div id="loginError"></div>
+    </form>
+  </div>
+</div>
+<div class="app" id="appRoot">
 
   <header class="topbar">
     <h1>What did we do&hellip;</h1>
@@ -359,27 +411,31 @@
       <div class="search-bar">
         <input type="text" id="searchInput" placeholder="Try &quot;Layla's birthday&quot;, a name, or a place" autocomplete="off">
       </div>
-      <div class="filter-row" id="filterRow"></div>
+      <button type="button" class="filter-toggle" id="filterToggle">
+        <span class="chev">▾</span> Filter by person, place, or who logged it
+      </button>
+      <div class="filter-row collapsed" id="filterRow"></div>
       <div id="searchResults"></div>
     </section>
 
     <!-- SHARE -->
     <section class="view" id="view-share">
-      <h2 class="section-title">Share with your partner</h2>
+      <h2 class="section-title">Account</h2>
       <div class="share-block">
-        <h3>Send your entries</h3>
-        <p>Export everything as a file and send it to her — WhatsApp, email, AirDrop, however's easiest.</p>
+        <h3>Signed in as</h3>
+        <p id="loggedInAs" style="color:var(--ink);font-weight:600;"></p>
+        <button class="btn-secondary" id="logoutBtn">Log out</button>
+      </div>
+      <div class="share-block">
+        <h3>Backup</h3>
+        <p>Your entries live in the cloud now and sync automatically between you and your partner — no more exporting back and forth. This just saves an extra copy to your phone now and then, purely as a safety habit.</p>
         <button class="btn-secondary" id="exportBtn">Export as file</button>
       </div>
       <div class="share-block">
-        <h3>Bring in her entries</h3>
-        <p>Import the file she sends you. New entries are added; anything already in here is skipped, so it's safe to import the same file twice.</p>
+        <h3>Restore from a backup file</h3>
+        <p>Only needed if you're migrating old entries from before this app moved to the cloud, or restoring a backup. Each entry in the file gets added fresh — if you're not sure, ask before using this.</p>
         <input type="file" id="importFile" accept="application/json">
         <div class="status-msg" id="importStatus"></div>
-      </div>
-      <div class="share-block">
-        <h3>How this works</h3>
-        <p>There's no server and nothing leaves your phone on its own. Whoever logs something new should export and send when it's convenient — a weekly habit works well. Whatever's newest in each of your files wins if you ever log the very same day-and-title on both phones.</p>
       </div>
     </section>
 
@@ -410,6 +466,43 @@
 
 </div>
 
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
+  import {
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
+  } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js";
+  import {
+    getFirestore, collection, doc, addDoc, updateDoc, deleteDoc,
+    onSnapshot, serverTimestamp, enableIndexedDbPersistence
+  } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAdRRyrj1ZkUZEH4jNoyz9dUfl0zaUTv5w",
+    authDomain: "family-hub-apps-f51ef.firebaseapp.com",
+    projectId: "family-hub-apps-f51ef",
+    storageBucket: "family-hub-apps-f51ef.firebasestorage.app",
+    messagingSenderId: "1038188562420",
+    appId: "1:1038188562420:web:5020cd362f8f1b0aff1ba1"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  enableIndexedDbPersistence(db).catch(() => {
+    // Fails silently if multiple tabs are open, or the browser doesn't support it — app still works online.
+  });
+
+  // Expose what the main app script needs, since that script is a plain (non-module) script.
+  window.fb = {
+    auth, db, collection, doc, addDoc, updateDoc, deleteDoc,
+    onSnapshot, serverTimestamp, signInWithEmailAndPassword, signOut
+  };
+
+  onAuthStateChanged(auth, user => {
+    if (typeof window.onAuthChange === 'function') window.onAuthChange(user);
+    else window.__pendingAuthUser = user;
+  });
+</script>
 <script>
 (function(){
 
@@ -424,10 +517,6 @@
   const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const MIN_YEAR = 2026, MIN_MONTH = 6; // July 2026, 0-indexed month
 
-  function uid(){
-    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
-    return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2);
-  }
   function escapeHtml(s){
     return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
@@ -439,14 +528,44 @@
     return safe.slice(0,idx) + '<mark>' + safe.slice(idx, idx+q.length) + '</mark>' + safe.slice(idx+q.length);
   }
 
-  /* ============ Storage ============ */
-  const STORE_KEY = 'daybook.entries.v1';
-  function loadEntries(){
-    try { return JSON.parse(localStorage.getItem(STORE_KEY)) || []; }
-    catch(e){ return []; }
+  /* ============ Author identity ============ */
+  // Replace these two placeholder emails with your two real Firebase Auth login emails (lowercase).
+  const AUTHOR_MAP = {
+    'your-email-here@example.com': { initials: 'PR', color: '#FF4F8B' },
+    'partner-email-here@example.com': { initials: 'KT', color: '#3FD3E0' }
+  };
+  function authorBadgeHTML(email){
+    const info = AUTHOR_MAP[(email || '').toLowerCase()];
+    if (!info) return '';
+    return `<span class="author-badge" style="background:${info.color}26;color:${info.color};border:1px solid ${info.color};">${info.initials}</span>`;
   }
-  function saveEntries(){ localStorage.setItem(STORE_KEY, JSON.stringify(entries)); }
-  let entries = loadEntries();
+  function createdMillis(e){
+    if (e.createdAt && typeof e.createdAt.toMillis === 'function') return e.createdAt.toMillis();
+    return e.created || 0;
+  }
+
+  /* ============ Firestore data layer ============ */
+  let entries = [];
+  let unsubscribeEntries = null;
+
+  function startEntriesListener(){
+    if (unsubscribeEntries) return;
+    unsubscribeEntries = window.fb.onSnapshot(
+      window.fb.collection(window.fb.db, 'entries'),
+      snapshot => {
+        entries = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (window.appInitialized) refreshAllViews();
+        else initApp();
+      },
+      err => {
+        console.error('Firestore listener error:', err);
+      }
+    );
+  }
+  function stopEntriesListener(){
+    if (unsubscribeEntries){ unsubscribeEntries(); unsubscribeEntries = null; }
+    entries = [];
+  }
 
   function allVenues(){
     return [...new Set(entries.map(e => e.venue).filter(Boolean))].sort();
@@ -533,10 +652,11 @@
     const label = entry.title ? `"${entry.title}"` : 'this entry';
     const ok = window.confirm(`Delete ${label} (${formatShort(entry.date)})? This can't be undone.`);
     if (!ok) return;
-    entries = entries.filter(e => e.id !== id);
-    saveEntries();
+    window.fb.deleteDoc(window.fb.doc(window.fb.db, 'entries', id)).catch(err => {
+      alert('Could not delete — check your connection and try again.');
+      console.error(err);
+    });
     if (editingId === id) exitEditMode();
-    refreshAllViews();
   }
 
   function refreshAllViews(){
@@ -590,36 +710,33 @@
     e.preventDefault();
     if (attendeeInput.value.trim()) addAttendeeFromInput();
     const wasEditing = !!editingId;
+    const fields = {
+      date: dateInput.value,
+      title: titleInput.value.trim(),
+      venue: venueInput.value.trim(),
+      attendees: [...currentAttendees],
+      description: descInput.value.trim()
+    };
     if (editingId){
-      const idx = entries.findIndex(en => en.id === editingId);
-      if (idx !== -1){
-        entries[idx] = {
-          ...entries[idx],
-          date: dateInput.value,
-          title: titleInput.value.trim(),
-          venue: venueInput.value.trim(),
-          attendees: [...currentAttendees],
-          description: descInput.value.trim()
-        };
-      }
+      const idToUpdate = editingId;
+      window.fb.updateDoc(window.fb.doc(window.fb.db, 'entries', idToUpdate), fields).catch(err => {
+        alert('Could not save the update — check your connection and try again.');
+        console.error(err);
+      });
       exitEditMode();
     } else {
-      const entry = {
-        id: uid(),
-        date: dateInput.value,
-        title: titleInput.value.trim(),
-        venue: venueInput.value.trim(),
-        attendees: [...currentAttendees],
-        description: descInput.value.trim(),
-        created: Date.now()
-      };
-      entries.push(entry);
+      window.fb.addDoc(window.fb.collection(window.fb.db, 'entries'), {
+        ...fields,
+        authorEmail: (window.fb.auth.currentUser && window.fb.auth.currentUser.email) || '',
+        createdAt: window.fb.serverTimestamp()
+      }).catch(err => {
+        alert('Could not save — check your connection and try again.');
+        console.error(err);
+      });
     }
-    saveEntries();
     titleInput.value = ''; venueInput.value = ''; descInput.value = '';
     currentAttendees = []; renderChips();
     dateInput.value = TODAY_ISO;
-    refreshAllViews();
     const status = document.getElementById('saveStatus');
     status.textContent = wasEditing ? 'Entry Updated' : 'Entry Submitted';
     setTimeout(() => status.textContent = '', 2000);
@@ -734,7 +851,7 @@
   function renderDayPanel(){
     const panel = document.getElementById('dayPanel');
     if (!selectedDate){ panel.innerHTML = ''; return; }
-    const dayEntries = entries.filter(e => e.date === selectedDate).sort((a,b) => a.created - b.created);
+    const dayEntries = entries.filter(e => e.date === selectedDate).sort((a,b) => createdMillis(a) - createdMillis(b));
     let html = `<div class="panel-head">${formatLong(selectedDate)}</div>`;
     if (!dayEntries.length){
       html += `<div class="empty-note">Nothing logged for this day yet.</div>`;
@@ -762,7 +879,7 @@
     return `<div class="entry-card">
       <div class="row1">
         <div style="flex:1;">
-          <div class="entry-title">${highlight(e.title, q)}</div>
+          <div class="entry-title">${highlight(e.title, q)}${authorBadgeHTML(e.authorEmail)}</div>
           <div class="entry-meta">
             <span>🗓 ${formatShort(e.date)}</span>
             ${e.venue ? `<span>📍 ${highlight(e.venue, q)}</span>` : ''}
@@ -785,13 +902,16 @@
     const row = document.getElementById('filterRow');
     const people = allAttendees().slice(0,8);
     const venues = allVenues().slice(0,8);
+    const authorsInUse = [...new Set(entries.map(e => (e.authorEmail||'').toLowerCase()).filter(em => AUTHOR_MAP[em]))];
     const chips = [
-      ...people.map(p => ({type:'attendee', value:p})),
-      ...venues.map(v => ({type:'venue', value:v}))
+      ...authorsInUse.map(em => ({type:'author', value:em, label: AUTHOR_MAP[em].initials})),
+      ...people.map(p => ({type:'attendee', value:p, label:p})),
+      ...venues.map(v => ({type:'venue', value:v, label:v}))
     ];
     row.innerHTML = chips.map(c => {
       const active = activeFilter && activeFilter.type === c.type && activeFilter.value === c.value;
-      return `<button class="filter-chip${active?' active':''}" data-type="${c.type}" data-value="${escapeHtml(c.value)}">${c.type==='attendee'?'👤':'📍'} ${escapeHtml(c.value)}</button>`;
+      const icon = c.type === 'attendee' ? '👤' : c.type === 'venue' ? '📍' : '●';
+      return `<button class="filter-chip${active?' active':''}" data-type="${c.type}" data-value="${escapeHtml(c.value)}">${icon} ${escapeHtml(c.label)}</button>`;
     }).join('');
     row.querySelectorAll('.filter-chip').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -824,11 +944,12 @@
     const q = document.getElementById('searchInput').value.trim();
     let pool = entries;
     if (activeFilter){
-      pool = pool.filter(e =>
-        activeFilter.type === 'attendee'
-          ? (e.attendees||[]).some(a => a.toLowerCase() === activeFilter.value.toLowerCase())
-          : (e.venue||'').toLowerCase() === activeFilter.value.toLowerCase()
-      );
+      pool = pool.filter(e => {
+        if (activeFilter.type === 'attendee') return (e.attendees||[]).some(a => a.toLowerCase() === activeFilter.value.toLowerCase());
+        if (activeFilter.type === 'venue') return (e.venue||'').toLowerCase() === activeFilter.value.toLowerCase();
+        if (activeFilter.type === 'author') return (e.authorEmail||'').toLowerCase() === activeFilter.value.toLowerCase();
+        return true;
+      });
     }
     let results;
     if (!q){
@@ -849,6 +970,13 @@
   }
   document.getElementById('searchInput').addEventListener('input', runSearch);
 
+  const filterToggle = document.getElementById('filterToggle');
+  const filterRowEl = document.getElementById('filterRow');
+  filterToggle.addEventListener('click', () => {
+    const nowOpen = filterRowEl.classList.toggle('collapsed') === false;
+    filterToggle.classList.toggle('open', nowOpen);
+  });
+
   /* ============ Share: export / import ============ */
   document.getElementById('exportBtn').addEventListener('click', () => {
     const payload = { exportedAt: new Date().toISOString(), entries };
@@ -868,24 +996,27 @@
     const statusEl = document.getElementById('importStatus');
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const parsed = JSON.parse(reader.result);
         const incoming = Array.isArray(parsed) ? parsed : (parsed.entries || []);
-        const existingIds = new Set(entries.map(e => e.id));
-        let added = 0, skipped = 0;
-        incoming.forEach(inc => {
-          if (inc && inc.id && !existingIds.has(inc.id)) {
-            entries.push(inc);
-            existingIds.add(inc.id);
+        let added = 0, failed = 0;
+        for (const inc of incoming) {
+          if (!inc || !inc.title || !inc.date) { failed++; continue; }
+          try {
+            await window.fb.addDoc(window.fb.collection(window.fb.db, 'entries'), {
+              date: inc.date,
+              title: inc.title,
+              venue: inc.venue || '',
+              attendees: inc.attendees || [],
+              description: inc.description || '',
+              authorEmail: (window.fb.auth.currentUser && window.fb.auth.currentUser.email) || '',
+              createdAt: window.fb.serverTimestamp()
+            });
             added++;
-          } else {
-            skipped++;
-          }
-        });
-        saveEntries();
-        refreshAllViews();
-        statusEl.textContent = `Added ${added} new entr${added===1?'y':'ies'}${skipped ? `, skipped ${skipped} already logged` : ''}.`;
+          } catch(err){ failed++; }
+        }
+        statusEl.textContent = `Added ${added} entr${added===1?'y':'ies'}${failed ? `, ${failed} couldn't be added` : ''}.`;
       } catch(err){
         statusEl.textContent = 'Could not read that file — make sure it\'s an export from this app.';
       }
@@ -894,16 +1025,80 @@
     reader.readAsText(file);
   });
 
-  /* ============ Init ============ */
-  renderChips();
-  refreshDatalists();
-  renderUpcoming();
-  renderOnThisDay();
-  renderCalendar();
-  renderFilterRow();
-  runSearch();
-  wireCardActions('dayPanel');
-  wireCardActions('searchResults');
+  /* ============ Auth / Login ============ */
+  const loginScreen = document.getElementById('loginScreen');
+  const appRoot = document.getElementById('appRoot');
+  const loginForm = document.getElementById('loginForm');
+  const loginError = document.getElementById('loginError');
+  const loginSubmitBtn = document.getElementById('loginSubmitBtn');
+
+  window.appInitialized = false;
+  let cardActionsWired = false;
+
+  function initApp(){
+    window.appInitialized = true;
+    renderChips();
+    refreshDatalists();
+    renderUpcoming();
+    renderOnThisDay();
+    renderCalendar();
+    renderFilterRow();
+    runSearch();
+    if (!cardActionsWired){
+      wireCardActions('dayPanel');
+      wireCardActions('searchResults');
+      cardActionsWired = true;
+    }
+    const who = document.getElementById('loggedInAs');
+    if (who && window.fb.auth.currentUser) who.textContent = window.fb.auth.currentUser.email;
+  }
+
+  function showApp(){
+    loginScreen.style.display = 'none';
+    appRoot.classList.add('visible');
+  }
+  function showLogin(){
+    appRoot.classList.remove('visible');
+    loginScreen.style.display = 'flex';
+    loginSubmitBtn.disabled = false;
+    loginSubmitBtn.textContent = 'Log in';
+  }
+
+  window.onAuthChange = function(user){
+    if (user){
+      showApp();
+      startEntriesListener();
+    } else {
+      window.appInitialized = false;
+      stopEntriesListener();
+      showLogin();
+    }
+  };
+  if (window.__pendingAuthUser !== undefined){
+    window.onAuthChange(window.__pendingAuthUser);
+  }
+
+  loginForm.addEventListener('submit', e => {
+    e.preventDefault();
+    loginError.textContent = '';
+    loginSubmitBtn.disabled = true;
+    loginSubmitBtn.textContent = 'Logging in…';
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    window.fb.signInWithEmailAndPassword(window.fb.auth, email, password).catch(err => {
+      loginSubmitBtn.disabled = false;
+      loginSubmitBtn.textContent = 'Log in';
+      loginError.textContent = 'Could not log in — check the email and password.';
+      console.error(err);
+    });
+  });
+
+  const logoutBtn = document.getElementById('logoutBtn');
+  if (logoutBtn){
+    logoutBtn.addEventListener('click', () => {
+      window.fb.signOut(window.fb.auth).catch(() => {});
+    });
+  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
