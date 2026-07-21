@@ -945,6 +945,19 @@
 
   function runSearch(){
     const q = document.getElementById('searchInput').value.trim();
+    const box = document.getElementById('searchResults');
+    const filterToggleEl = document.getElementById('filterToggle');
+    const filterRowEl2 = document.getElementById('filterRow');
+
+    if (!q){
+      box.innerHTML = '';
+      filterToggleEl.style.display = 'none';
+      filterRowEl2.classList.add('collapsed');
+      filterToggleEl.classList.remove('open');
+      return;
+    }
+    filterToggleEl.style.display = 'inline-flex';
+
     let pool = entries;
     if (activeFilter){
       pool = pool.filter(e => {
@@ -954,17 +967,11 @@
         return true;
       });
     }
-    let results;
-    if (!q){
-      results = pool.slice().sort((a,b) => b.date.localeCompare(a.date));
-    } else {
-      results = pool
-        .map(e => ({e, s: scoreEntry(e, q)}))
-        .filter(r => r.s > 0)
-        .sort((a,b) => b.s - a.s || b.e.date.localeCompare(a.e.date))
-        .map(r => r.e);
-    }
-    const box = document.getElementById('searchResults');
+    const results = pool
+      .map(e => ({e, s: scoreEntry(e, q)}))
+      .filter(r => r.s > 0)
+      .sort((a,b) => b.s - a.s || b.e.date.localeCompare(a.e.date))
+      .map(r => r.e);
     if (!results.length){
       box.innerHTML = `<div class="empty-note">No entries match yet. Try a different word, or check spelling of names and places.</div>`;
       return;
