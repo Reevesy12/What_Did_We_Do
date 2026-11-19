@@ -91,6 +91,10 @@
 
   /* ---------- Form ---------- */
   .field{margin-bottom:16px;}
+  .field-row{display:flex;gap:12px;}
+  .field-row .field{flex:1;min-width:0;}
+  .field label .opt{text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-faint);}
+  input[type=time], input[type=date]{min-height:44px;color-scheme:dark;}
   .field label{
     display:block;
     font-size:11px;
@@ -100,7 +104,7 @@
     margin-bottom:6px;
     font-weight:600;
   }
-  input[type=text], input[type=date], input[type=password], textarea{
+  input[type=text], input[type=date], input[type=time], input[type=password], textarea{
     width:100%;
     border:1px solid var(--line);
     background:var(--card);
@@ -354,12 +358,18 @@
     <section class="view active" id="view-add">
       <h2 class="section-title" id="addSectionTitle">Log today</h2>
       <form id="entryForm">
-        <div class="field">
-          <label for="f-date">Date</label>
-          <input type="date" id="f-date" required>
+        <div class="field-row">
+          <div class="field">
+            <label for="f-date">Date</label>
+            <input type="date" id="f-date" required>
+          </div>
+          <div class="field">
+            <label for="f-time">Time <span class="opt">(optional)</span></label>
+            <input type="time" id="f-time">
+          </div>
         </div>
         <div class="field">
-          <label for="f-title">What was it?</label>
+          <label for="f-title">Event</label>
           <input type="text" id="f-title" placeholder="e.g. Layla's birthday" required autocomplete="off">
         </div>
         <div class="field">
@@ -368,14 +378,14 @@
           <datalist id="venueList"></datalist>
         </div>
         <div class="field">
-          <label for="f-attendee-input">Who was there?</label>
+          <label for="f-attendee-input">Who is attending?</label>
           <div class="chips" id="attendeeChips"></div>
           <input type="text" id="f-attendee-input" list="attendeeList" placeholder="Type a name, press Enter" autocomplete="off">
           <datalist id="attendeeList"></datalist>
         </div>
         <div class="field">
-          <label for="f-desc">What did we do?</label>
-          <textarea id="f-desc" placeholder="A few lines about it..."></textarea>
+          <label for="f-desc">Notes</label>
+          <textarea id="f-desc" placeholder="Anything worth remembering..."></textarea>
         </div>
         <button type="submit" class="btn-primary" id="submitBtn">Save entry</button>
         <button type="button" class="btn-secondary" id="cancelEditBtn" style="width:100%;margin-top:8px;display:none;">Cancel edit</button>
@@ -516,6 +526,14 @@
   const TODAY_ISO = toISO(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate());
   const parseISO = iso => { const [y,m,d] = iso.split('-').map(Number); return new Date(y, m-1, d); };
   const formatLong = iso => parseISO(iso).toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'long', year:'numeric'});
+  const timeChip = e => e.time ? `<span>🕐 ${escapeHtml(e.time)}</span>` : '';
+  function compareWithinDay(a, b){
+    const ta = a.time || '', tb = b.time || '';
+    if (ta && tb && ta !== tb) return ta.localeCompare(tb);
+    if (ta && !tb) return -1;
+    if (!ta && tb) return 1;
+    return createdMillis(a) - createdMillis(b);
+  }
   const formatShort = iso => parseISO(iso).toLocaleDateString('en-GB',{day:'numeric', month:'short', year:'numeric'});
   const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const MIN_YEAR = 2026, MIN_MONTH = 6; // July 2026, 0-indexed month
@@ -604,6 +622,7 @@
 
   /* ============ Add Entry form ============ */
   const dateInput = document.getElementById('f-date');
+  const timeInput = document.getElementById('f-time');
   const titleInput = document.getElementById('f-title');
   const venueInput = document.getElementById('f-venue');
   const descInput = document.getElementById('f-desc');
@@ -621,6 +640,7 @@
   function enterEditMode(entry){
     editingId = entry.id;
     dateInput.value = entry.date;
+    timeInput.value = entry.time || '';
     titleInput.value = entry.title;
     venueInput.value = entry.venue || '';
     descInput.value = entry.description || '';
@@ -645,6 +665,7 @@
     titleInput.value = ''; venueInput.value = ''; descInput.value = '';
     currentAttendees = []; renderChips();
     dateInput.value = TODAY_ISO;
+    timeInput.value = '';
   });
 
   function findEntry(id){ return entries.find(e => e.id === id); }
@@ -715,6 +736,7 @@
     const wasEditing = !!editingId;
     const fields = {
       date: dateInput.value,
+      time: timeInput.value || '',
       title: titleInput.value.trim(),
       venue: venueInput.value.trim(),
       attendees: [...currentAttendees],
@@ -740,6 +762,7 @@
     titleInput.value = ''; venueInput.value = ''; descInput.value = '';
     currentAttendees = []; renderChips();
     dateInput.value = TODAY_ISO;
+    timeInput.value = '';
     const status = document.getElementById('saveStatus');
     status.textContent = wasEditing ? 'Entry Updated' : 'Entry Submitted';
     setTimeout(() => status.textContent = '', 2000);
@@ -752,7 +775,7 @@
     const upcoming = entries
       .map(e => ({ e, diff: Math.round((parseISO(e.date) - todayD) / 86400000) }))
       .filter(x => x.diff > 0 && x.diff <= 14)
-      .sort((a,b) => a.diff - b.diff);
+      .sort((a,b) => (a.diff - b.diff) || compareWithinDay(a.e, b.e));
     if (!upcoming.length){
       box.innerHTML = '<div class="empty-note">Nothing logged for the next two weeks. Log a future date — a birthday, an anniversary — and it\'ll show up here as it gets close.</div>';
       return;
@@ -765,7 +788,7 @@
         <div>
           <div class="otd-year">${dayLabel.toUpperCase()}</div>
           <div class="entry-title" style="font-size:15px;">${escapeHtml(e.title)}</div>
-          ${e.venue ? `<div class="entry-meta"><span>📍 ${escapeHtml(e.venue)}</span></div>` : ''}
+          ${(e.time || e.venue) ? `<div class="entry-meta">${timeChip(e)}${e.venue ? `<span>📍 ${escapeHtml(e.venue)}</span>` : ''}</div>` : ''}
           ${e.attendees && e.attendees.length ? `<div class="entry-attendees">${e.attendees.map(a => `<span class="tag-sage">${escapeHtml(a)}</span>`).join('')}</div>` : ''}
         </div>
       </div>`;
@@ -791,7 +814,7 @@
         <div>
           <div class="otd-year">${e.date.split('-')[0]} · ${MONTH_NAMES[Number(m)-1]} ${Number(e.date.split('-')[2])}</div>
           <div class="entry-title" style="font-size:15px;">${escapeHtml(e.title)}</div>
-          ${e.venue ? `<div class="entry-meta"><span>📍 ${escapeHtml(e.venue)}</span></div>` : ''}
+          ${(e.time || e.venue) ? `<div class="entry-meta">${timeChip(e)}${e.venue ? `<span>📍 ${escapeHtml(e.venue)}</span>` : ''}</div>` : ''}
           ${e.description ? `<p class="entry-desc">${escapeHtml(e.description)}</p>` : ''}
         </div>
       </div>`;
@@ -854,7 +877,7 @@
   function renderDayPanel(){
     const panel = document.getElementById('dayPanel');
     if (!selectedDate){ panel.innerHTML = ''; return; }
-    const dayEntries = entries.filter(e => e.date === selectedDate).sort((a,b) => createdMillis(a) - createdMillis(b));
+    const dayEntries = entries.filter(e => e.date === selectedDate).sort(compareWithinDay);
     let html = `<div class="panel-head">${formatLong(selectedDate)}</div>`;
     if (!dayEntries.length){
       html += `<div class="empty-note">Nothing logged for this day yet.</div>`;
@@ -885,6 +908,7 @@
           <div class="entry-title">${highlight(e.title, q)}${authorBadgeHTML(e.authorEmail)}</div>
           <div class="entry-meta">
             <span>🗓 ${formatShort(e.date)}</span>
+            ${timeChip(e)}
             ${e.venue ? `<span>📍 ${highlight(e.venue, q)}</span>` : ''}
           </div>
         </div>
@@ -1016,6 +1040,7 @@
           try {
             await window.fb.addDoc(window.fb.collection(window.fb.db, 'entries'), {
               date: inc.date,
+              time: inc.time || '',
               title: inc.title,
               venue: inc.venue || '',
               attendees: inc.attendees || [],
