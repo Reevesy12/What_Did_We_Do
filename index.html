@@ -94,7 +94,17 @@
   .field-row{display:flex;gap:12px;}
   .field-row .field{flex:1;min-width:0;}
   .field label .opt{text-transform:none;letter-spacing:0;font-weight:500;color:var(--ink-faint);}
-  input[type=time], input[type=date]{min-height:44px;color-scheme:dark;}
+  input[type=date]{min-height:44px;color-scheme:dark;}
+  .time-select{display:flex;align-items:center;gap:6px;}
+  .time-select .colon{color:var(--ink-faint);font-weight:700;}
+  .time-select select{
+    flex:1;min-width:0;min-height:44px;
+    border:1px solid var(--line);background:var(--card);color:var(--ink);
+    border-radius:9px;padding:0 8px;font-family:var(--font-body);font-size:15px;
+    color-scheme:dark;
+  }
+  .time-select select:disabled{opacity:.45;}
+  .time-select select:focus-visible{outline:2px solid var(--wine);outline-offset:2px;}
   .field label{
     display:block;
     font-size:11px;
@@ -364,8 +374,12 @@
             <input type="date" id="f-date" required>
           </div>
           <div class="field">
-            <label for="f-time">Time <span class="opt">(optional)</span></label>
-            <input type="time" id="f-time">
+            <label for="f-time-h">Time <span class="opt">(optional)</span></label>
+            <div class="time-select">
+              <select id="f-time-h" aria-label="Hour"></select>
+              <span class="colon">:</span>
+              <select id="f-time-m" aria-label="Minutes" disabled></select>
+            </div>
           </div>
         </div>
         <div class="field">
@@ -622,7 +636,37 @@
 
   /* ============ Add Entry form ============ */
   const dateInput = document.getElementById('f-date');
-  const timeInput = document.getElementById('f-time');
+  // Time is picked from two dropdowns: hour, and minutes in 15-minute steps.
+  // It is still stored as one "HH:MM" string, so older entries are unaffected.
+  const timeHourSel = document.getElementById('f-time-h');
+  const timeMinSel = document.getElementById('f-time-m');
+  const STD_MINUTES = ['00','15','30','45'];
+  function fillSelect(sel, values, blankLabel){
+    sel.innerHTML = (blankLabel ? `<option value="">${blankLabel}</option>` : '') +
+      values.map(v => `<option value="${v}">${v}</option>`).join('');
+  }
+  fillSelect(timeHourSel, Array.from({length:24}, (_,i) => String(i).padStart(2,'0')), '--');
+  fillSelect(timeMinSel, STD_MINUTES);
+  timeHourSel.addEventListener('change', () => {
+    timeMinSel.disabled = !timeHourSel.value;
+    if (!timeHourSel.value) timeMinSel.value = '00';
+  });
+  const timeInput = {
+    get value(){ return timeHourSel.value ? `${timeHourSel.value}:${timeMinSel.value || '00'}` : ''; },
+    set value(v){
+      fillSelect(timeMinSel, STD_MINUTES);
+      const m = /^(\d{2}):(\d{2})$/.exec(v || '');
+      if (!m){ timeHourSel.value = ''; timeMinSel.value = '00'; timeMinSel.disabled = true; return; }
+      // An older entry may hold a minute that isn't on the 15-minute grid: keep it as-is rather than change it.
+      if (!STD_MINUTES.includes(m[2])){
+        timeMinSel.insertAdjacentHTML('beforeend', `<option value="${m[2]}">${m[2]}</option>`);
+      }
+      timeHourSel.value = m[1];
+      timeMinSel.value = m[2];
+      timeMinSel.disabled = false;
+    }
+  };
+  timeInput.value = '';
   const titleInput = document.getElementById('f-title');
   const venueInput = document.getElementById('f-venue');
   const descInput = document.getElementById('f-desc');
